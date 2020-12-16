@@ -138,35 +138,192 @@ Polish:
 Hints:
     * `from random import randint`
     * `randint` returns random integer between a and b (including both ends!)
+
+Tests:
+    >>> from random import seed
+    >>> dragon = Dragon('Wawelski')
+    >>> assert type(dragon) is Dragon
+    >>> dragon.name == 'Wawelski'
+    True
+    >>> dragon.position_x
+    0
+    >>> dragon.position_y
+    0
+    >>> dragon.set_position(1, 2)
+    >>> dragon.position_x, dragon.position_y
+    (1, 2)
+    >>> dragon.change_position(left=1)
+    >>> dragon.position_x, dragon.position_y
+    (0, 2)
+    >>> dragon.change_position(up=1)
+    >>> dragon.position_x, dragon.position_y
+    (0, 1)
+    >>> dragon.make_damage() in range(dragon.DAMAGE_MIN, dragon.DAMAGE_MAX)
+    True
+    >>> seed(0); dragon.make_damage()
+    17
+    >>> try:
+    ...     seed(0); dragon.take_damage(500)
+    ... except dragon.IsDead:
+    ...     print(f'{dragon.name} is dead')
+    ...     print(f'Gold {randint(1, 100)}')
+    ...     print(f'Position {dragon.get_position()}')
+    Wawelski is dead
+    Gold 50
+    Position (0, 1)
 """
 
 from random import randint
+from unittest import TestCase
+from string import ascii_uppercase
 
 
-class Dragon:
+BORDER_X_MIN = 0
+BORDER_Y_MIN = 0
+BORDER_X_MAX = 1920
+BORDER_Y_MAX = 1080
+
+
+class PositionError(Exception):
+    pass
+
+
+class Position:
+    position_x: int
+    position_y: int
+
+    def set_position(self, x, y):
+        self._position_check_boundary(x, y)
+        self.position_x = x
+        self.position_y = y
+
+    def _position_check_boundary(self, x, y):
+        if x < BORDER_X_MIN or y < BORDER_Y_MIN:
+            raise PositionError
+        if x > BORDER_X_MAX or y > BORDER_Y_MAX:
+            raise PositionError
+
+    def change_position(self, left=0, down=0, right=0, up=0):
+        new_x = self.position_x + right - left
+        new_y = self.position_y + down - up
+        self.set_position(new_x, new_y)
+
+    def get_position(self):
+        return self.position_x, self.position_y
+
+
+class Dragon(Position):
+    HEALTH_MIN = 50
+    HEALTH_MAX = 100
+    DAMAGE_MIN = 5
+    DAMAGE_MAX = 20
+
+    class IsDead(Exception):
+        pass
+
     def __init__(self, name, x=0, y=0):
+        if not isinstance(name, str):
+            raise NameError
+        if not name.startswith(tuple(ascii_uppercase)):
+            raise NameError
+        if type(x) is not int:
+            raise TypeError
+        if type(y) is not int:
+            raise TypeError
         self.name = name
-        self.health = randint(50, 100)
+        self.health = randint(self.HEALTH_MIN, self.HEALTH_MAX)
         self.texture = 'img/dragon/alive.png'
-        self.x = x
-        self.y = y
+        self.set_position(x, y)
 
-    def place(self, x, y):
-        self.x = x
-        self.y = y
+    def make_damage(self):
+        return randint(self.DAMAGE_MIN, self.DAMAGE_MAX)
 
-    def move(self, left=0, down=0, right=0, up=0):
-        self.x += right - left
-        self.y += down - up
-
-    def attack(self):
-        return randint(5, 20)
-
-    def hit(self, damage):
+    def take_damage(self, damage):
         self.health -= damage
         if self.health <= 0:
             self.status = 'dead'
             self.texture = 'img/dragon/dead.png'
-            print(f'{self.name} is dead')
-            print(f'Gold {randint(1, 100)}')
-            print(f'Position x={self.x} y={self.y}')
+            raise self.IsDead
+
+
+class DragonTest(TestCase):
+    def setUp(self) -> None:
+        self.dragon = Dragon('Wawelski')
+
+    def test_init_name(self):
+        dragon = Dragon('Wawelski')
+        self.assertEqual(dragon.name, 'Wawelski')
+
+    def test_init_name_is_str(self):
+        with self.assertRaises(NameError):
+            Dragon(1)
+
+    def test_init_position_valid(self):
+        dragon = Dragon('Wawelski', x=1, y=2)
+        self.assertEqual(dragon.position_x, 1)
+        self.assertEqual(dragon.position_y, 2)
+
+    def test_init_position_invalid(self):
+        with self.assertRaises(TypeError):
+            Dragon('Wawelski', x=1.1, y=2)
+        with self.assertRaises(TypeError):
+            Dragon('Wawelski', x=1, y=2.2)
+        with self.assertRaises(TypeError):
+            Dragon('Wawelski', x=1.1, y=2.2)
+        with self.assertRaises(TypeError):
+            Dragon('Wawelski', x='one', y='two')
+        with self.assertRaises(TypeError):
+            Dragon('Wawelski', x=True, y=False)
+
+    def test_init_name_is_capitalize(self):
+        with self.assertRaises(NameError):
+            Dragon('wawelski')
+
+    def test_position_valid(self):
+        self.dragon.set_position(1, 2)
+        self.assertEqual(self.dragon.position_x, 1)
+        self.assertEqual(self.dragon.position_y, 2)
+
+    def test_position_invalid_negative(self):
+        with self.assertRaises(PositionError):
+            self.dragon.set_position(-1, 0)
+        with self.assertRaises(PositionError):
+            self.dragon.set_position(0, -1)
+        with self.assertRaises(PositionError):
+            self.dragon.set_position(-1, -2)
+
+    def test_position_invalid_outside(self):
+        with self.assertRaises(PositionError):
+            self.dragon.set_position(BORDER_X_MAX + 1, 0)
+        with self.assertRaises(PositionError):
+            self.dragon.set_position(0, BORDER_Y_MAX + 1)
+        with self.assertRaises(PositionError):
+            self.dragon.set_position(BORDER_X_MAX + 1, BORDER_Y_MAX + 1)
+
+    def test_health(self):
+        self.assertIn(self.dragon.health, range(Dragon.HEALTH_MIN, Dragon.HEALTH_MAX))
+
+    def test_position_get(self):
+        self.dragon.set_position(1, 2)
+        self.assertEqual(self.dragon.get_position(), (1, 2))
+
+    def test_position_change_valid_right(self):
+        self.dragon.change_position(right=1)
+        x, y = self.dragon.get_position()
+        self.assertEqual(x, 1)
+        self.assertEqual(y, 0)
+
+    def test_position_change_valid_down(self):
+        self.dragon.change_position(down=1)
+        x, y = self.dragon.get_position()
+        self.assertEqual(x, 0)
+        self.assertEqual(y, 1)
+
+    def test_position_change_valid_left_invalid(self):
+        with self.assertRaises(PositionError):
+            self.dragon.change_position(left=1)
+
+    def test_kill_dragon(self):
+        self.dragon.health = 1
+        with self.assertRaises(Dragon.IsDead):
+            self.dragon.take_damage(2)
